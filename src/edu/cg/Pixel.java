@@ -1,4 +1,4 @@
-package edu.cg.menu;
+package edu.cg;
 
 public class Pixel {
     public long value;

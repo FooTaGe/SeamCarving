@@ -18,10 +18,12 @@ public class SeamsCarver extends ImageProcessor {
 	private ResizeOperation resizeOp;
 
 	//TODO: Add some additional fields:
-	private HashMap<int[], Boolean> removedPixels;
-	long[][] costMatrix;
-	private BufferedImage tempImage;
-	private BufferedImage gradientImage;
+	private HashMap<Pixel, Boolean> removedPixels;
+	private ImageArrayList costMatrix;
+    private ImageArrayList gradientImage;
+    private ImageArrayList tempImage;
+    private ImageArrayList greyImage;
+
 
 	//MARK: Constructor
 	public SeamsCarver(Logger logger, BufferedImage workingImage,
@@ -46,9 +48,9 @@ public class SeamsCarver extends ImageProcessor {
 		
 		//TODO: Initialize your additional fields and apply some preliminary calculations:
 
-		costMatrix = new long[inWidth][inHeight];
-		removedPixels = new HashMap<int[], Boolean>(inHeight * numOfSeams);
-		tempImage = workingImage;
+		costMatrix = new ImageArrayList(inWidth, inHeight);
+		removedPixels = new HashMap<>(inHeight * numOfSeams);
+        greyImage = ImageArrayList.createFromImage(greyscale(workingImage));
 	}
 	
 	//MARK: Methods
@@ -58,68 +60,118 @@ public class SeamsCarver extends ImageProcessor {
 	
 	//MARK: Unimplemented methods
 	private BufferedImage reduceImageWidth() {
-		//TODO: Implement this method, remove the exception.
 		calculateCostMatrix();
 
 		for (int i = 0; i < numOfSeams ; i++) {
-			findMinSeam();
-			updateTempImage();
+			removeMinSeam();
 			updateCostMatrix();
 		}
 
-		return tempImage;
+		return createReducedImage();
 	}
 
-	private void updateCostMatrix() {
+    private BufferedImage createReducedImage() {
+	    BufferedImage ans = newEmptyOutputSizedImage();
+        for (int y = 0; y < tempImage.getHeight(); y++) {
+            for (int x = 0; x < tempImage.getRowSize(y); x++) {
+                Pixel currPixel = tempImage.get(x, y);
+                int i = currPixel.x;
+                int j = currPixel.y;
+                ans.setRGB(x, y, workingImage.getRGB(i, j));
+            }
+        }
+        return ans;
+    }
+
+    private void updateCostMatrix() {
 		//ToDo 0_o effiecnt update
-		costMatrix = new long[tempImage.getWidth()][ tempImage.getHeight()];
-		calculateCostMatrix();
+		int width = costMatrix.getRowSize(0);
+		int height = costMatrix.getHeight();
+
+        for (int i = 0; i < width; i++) {
+            costMatrix.set(i, 0, gradientImage.get(i, 0).clone());
+        }
+
+        for (int y = 1; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                long val = gradientImage.get(x, y).value + getMinParent(x, y);
+                costMatrix.set(x, y, new Pixel(x, y, val));
+            }
+        }
 	}
 
-	private void updateTempImage() {
-		BufferedImage newImage = new BufferedImage(tempImage.getWidth() - 1, tempImage.getHeight(), tempImage.getType());
-		boolean afterSeam = false;
-		for (int y = 0; y < tempImage.getHeight(); y++) {
-			for (int x = 0; x < tempImage.getWidth() - 1; x++) {
-				int[] pos = {x, y};
-				if(removedPixels.containsKey(pos)) {
-					afterSeam = true;
-
-				}
-				int newX = afterSeam ? x + 1 : x;
-				newImage.setRGB(x, y, tempImage.getRGB(newX, y));
-			}
-			afterSeam = false;
-		}
-		tempImage = newImage;
-	}
-
-	private void findMinSeam() {
+	private void removeMinSeam() {
 		long minValue = Long.MAX_VALUE;
 		int minPos = 0;
 
-		for (int i = 0; i < tempImage.getWidth(); i++) {
-			if (costMatrix[i][tempImage.getHeight() - 1] < minValue) {
-				minValue = costMatrix[i][tempImage.getHeight() - 1];
+		for (int i = 0; i < tempImage.getRowSize(0); i++) {
+			long currVal = costMatrix.get(i, tempImage.getHeight() - 1).value;
+		    if (costMatrix.get(i, tempImage.getHeight() - 1).value < minValue) {
+				minValue = costMatrix.get(i, tempImage.getHeight() - 1).value;
 				minPos = i;
 			}
 		}
-		int x = minPos;
-		int[] father = {x, tempImage.getHeight() - 1};
-		removedPixels.put(father, true);
 
+		// Add base to hashmap
+		int x = minPos;
+		Pixel currPixel;
+
+
+        int[] father = {x, tempImage.getHeight() - 1};
+
+		//Backtrack and add the rest
 		while (father != null) {
-			father = backTrack(father);
-			removedPixels.put(father, true);
+            currPixel = tempImage.get(father[0], father[1]);
+		    removedPixels.put(greyImage.get(currPixel.x, currPixel.y), true);
+            int[] son = {father[0], father[1]};
+		    father = backTrack(father);
+            deleteAndUpdatePixel(son);
 		}
 	}
 
-	private int[] backTrack(int[] father) {
-		if (father[1] == 0) {
+    private void deleteAndUpdatePixel(int[] pos) {
+	    int x = pos[0];
+	    int y= pos[1];
+	    tempImage.remove(x, y);
+	    gradientImage.remove(x, y);
+	    costMatrix.remove(x, y);
+	    if(x > 0){
+            updateGradient(x-1, y);
+        }
+        if (x < tempImage.getRowSize(y) - 1){
+            updateGradient(x, y);
+        }
+
+
+    }
+
+    private void updateGradient(int x, int y) {
+        int dx = 0;
+        int dy = 0;
+	    if (x == tempImage.getRowSize(y) - 1) {
+            dx = (int) Math.pow(tempImage.get(x, y).value - tempImage.get(x - 1, y).value ,2);
+        } else {
+	        dx = (int) Math.pow(tempImage.get(x, y).value - tempImage.get(x + 1, y).value ,2);
+        }
+
+        if (y == tempImage.getHeight() - 1) {
+            dy = (int) Math.pow(tempImage.get(x, y).value - tempImage.get(x, y - 1).value ,2);
+        } else {
+            dy = (int) Math.pow(tempImage.get(x, y).value - tempImage.get(x, y + 1).value ,2);
+        }
+        int value = (int) Math.sqrt((dx + dy) / 2);
+        gradientImage.get(x, y).value = value;
+    }
+
+    private int[] backTrack(int[] son) {
+		if (son[1] == 0) {
 			return null;
 		}
-		int x = father[0];
-		int y = father[1];
+		int x = son[0];
+		int y = son[1];
+        long cv = 0;
+        long cl = 0;
+        long cr = 0;
 
 		//each one is {x, y, value}
 
@@ -128,54 +180,147 @@ public class SeamsCarver extends ImageProcessor {
 		long[] rightParent = {x + 1, y - 1, 0};
 		long[] parent = new long[3];
 
+        if(x > 0 && x < tempImage.getRowSize(y) - 1){
+            cv = Math.abs(tempImage.get(x - 1, y).value - tempImage.get(x + 1, y).value);
+            cl = cv + Math.abs(tempImage.get(x, y - 1).value - tempImage.get(x - 1, y).value);
+            cr = cv + Math.abs(tempImage.get(x, y - 1).value - tempImage.get(x + 1, y).value);
+        }
+        else if(x == 0){
+            cr = Math.abs(tempImage.get(x, y - 1).value - tempImage.get(x + 1, y).value);
+        }
+        else if (x == tempImage.getRowSize(y) - 1){
+            cl = Math.abs(tempImage.get(x, y - 1).value - tempImage.get(x - 1, y).value);
+        }
 
-		leftParent[2] = x != 0 ? costMatrix[x - 1][y - 1] : Long.MAX_VALUE;
-		rightParent[2] = x != (tempImage.getWidth() - 1) ? costMatrix[x + 1][y - 1] : Long.MAX_VALUE;
-		upParent[2] = costMatrix[x][y - 1];
-		parent = leftParent[2] < rightParent[2] ? leftParent : rightParent;
-		parent = parent[2] < upParent[2] ? parent : upParent;
+        upParent[2] = costMatrix.get(x, y - 1).value + gradientImage.get(x, y).value +  cv;
+        leftParent[2] = x > 0 ? costMatrix.get(x - 1, y - 1).value + gradientImage.get(x, y).value + cl : Long.MAX_VALUE;
+        rightParent[2] = x != tempImage.getRowSize(y) - 1 ? costMatrix.get(x + 1, y - 1).value + gradientImage.get(x, y).value + cr : Long.MAX_VALUE;
 
-		int[] fatherLoc = {(int) parent[0], (int) parent[1]};
-
-		return fatherLoc;
+        long currValue = costMatrix.get(x, y).value;
+        if(currValue == upParent[2]){
+            int[] ans = {(int)upParent[0], (int)upParent[1]};
+            return  ans;
+        }
+        else if(currValue == leftParent[2]){
+            int[] ans = {(int)leftParent[0], (int)leftParent[1]};
+            return  ans;
+        }
+        else{
+            int[] ans = {(int)rightParent[0], (int)rightParent[1]};
+            return  ans;
+        }
 	}
 
 	private void calculateCostMatrix() {
-		//insert values of first row
-		gradientImage = gradientMagnitude(tempImage);
-		for (int i = 0; i < tempImage.getWidth(); i++) {
-			costMatrix[i][0] = getGradient(i, 0);
-		}
-		for (int y = 1; y < tempImage.getHeight(); y++) {
-			for (int x = 0; x < tempImage.getWidth(); x++) {
-				costMatrix[x][y] = getGradient(x, y) + getMinParent(x, y);
+        gradientImage = ImageArrayList.createFromImage(gradientMagnitude(workingImage));
+        tempImage = ImageArrayList.createFromImage(greyscale(workingImage));
+	    int width = tempImage.getRowSize(0);
+	    int height = tempImage.getHeight();
 
+
+	    //insert values of first row
+        for (int i = 0; i < width; i++) {
+			costMatrix.set(i, 0, gradientImage.get(i, 0).clone());
+		}
+
+		for (int y = 1; y < height; y++) {
+			for (int x = 0; x < width; x++) {
+				long val = gradientImage.get(x, y).value + getMinParent(x, y);
+			    costMatrix.set(x, y, new Pixel(x, y, val));
 			}
 		}
 	}
 
 	private long getMinParent(int x, int y) {
 		//TODO add C shtut
-		long leftParent, upParent, rightParent, parent;
-		leftParent = x != 0 ? costMatrix[x - 1][y - 1] : Long.MAX_VALUE;
-		rightParent = x != (tempImage.getWidth() - 1) ? costMatrix[x + 1][y - 1] : Long.MAX_VALUE;
-		upParent = costMatrix[x][y - 1];
+		int width = tempImage.getRowSize(y);
+        long leftParent, upParent, rightParent, parent;
+        long cv = 0;
+        long cl = 0;
+        long cr = 0;
+		leftParent = x != 0 ? costMatrix.get(x - 1,y - 1).value : Long.MAX_VALUE;
+		rightParent = x != (width - 1) ? costMatrix.get(x + 1, y - 1).value : Long.MAX_VALUE;
+		upParent = costMatrix.get(x, y - 1).value;
+		if(x > 0 && x < width - 1){
+            cv = Math.abs(tempImage.get(x - 1, y).value - tempImage.get(x + 1, y).value);
+            cl = cv + Math.abs(tempImage.get(x, y - 1).value - tempImage.get(x - 1, y).value);
+            cr = cv + Math.abs(tempImage.get(x, y - 1).value - tempImage.get(x + 1, y).value);
+        }
+        else if(x == 0){
+		    cr = Math.abs(tempImage.get(x, y - 1).value - tempImage.get(x + 1, y).value);
+        }
+        else if (x == width - 1){
+		    cl = Math.abs(tempImage.get(x, y - 1).value - tempImage.get(x - 1, y).value);
+        }
+        leftParent += cl;
+        rightParent += cr;
+        upParent += cv;
+
+        // Find min
 		parent = Math.min(leftParent, rightParent);
 		parent = Math.min(parent, upParent);
 		return parent;
 	}
 
-	private int getGradient (int x, int y) {
-		return new Color(gradientImage.getRGB(x, y)).getBlue();
-	}
 
 	private BufferedImage increaseImageWidth() {
 		//TODO: Implement this method, remove the exception.
-		throw new UnimplementedMethodException("increaseImageWidth");
-	}
+        calculateCostMatrix();
+
+        for (int i = 0; i < numOfSeams; i++) {
+            removeMinSeam();
+            updateCostMatrix();
+        }
+
+        return createEnlargedImage();
+    }
+
+    private BufferedImage createEnlargedImage() {
+        BufferedImage ans = newEmptyOutputSizedImage();
+        ArrayList<ArrayList<Integer>> temp = new ArrayList<>(outHeight);
+        for (int y = 0; y < workingImage.getHeight(); y++) {
+            temp.add(new ArrayList<Integer>(outWidth));
+            for (int x = 0; x < workingImage.getWidth(); x++) {
+                temp.get(y).add(workingImage.getRGB(x, y));
+                if (removedPixels.containsKey(greyImage.get(x, y))){
+                    temp.get(y).add(workingImage.getRGB(x, y));
+                }
+            }
+        }
+
+        for (int y = 0; y < outHeight; y++) {
+            for (int x= 0; x < outWidth; x++) {
+                ans.setRGB(x, y, temp.get(y).get(x));
+            }
+        }
+        return ans;
+    }
 	
 	public BufferedImage showSeams(int seamColorRGB) {
-		//TODO: Implement this method (bonus), remove the exception.
-		throw new UnimplementedMethodException("showSeams");
+        calculateCostMatrix();
+
+        for (int i = 0; i < numOfSeams ; i++) {
+            removeMinSeam();
+            updateCostMatrix();
+        }
+
+        return createSeamsImage();
 	}
+
+    private BufferedImage createSeamsImage() {
+        BufferedImage ans = newEmptyInputSizedImage();
+        Color red = new Color(255, 0, 0);
+        for (int y = 0; y < workingImage.getHeight(); y++) {
+            for (int x = 0; x < workingImage.getWidth(); x++) {
+                if (removedPixels.containsKey(greyImage.get(x, y))){
+                    ans.setRGB(x, y, red.getRGB());
+                }
+                else {
+                    ans.setRGB(x, y, workingImage.getRGB(x, y));
+                }
+            }
+        }
+
+        return ans;
+    }
 }
