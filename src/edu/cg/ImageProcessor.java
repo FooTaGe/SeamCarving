@@ -149,13 +149,26 @@ public class ImageProcessor extends FunctioalForEachLoops {
 	}
 
 	public BufferedImage nearestNeighbor() {
-	    setForEachInputParameters();
-		//TODO: Implement this method, remove the exception.
-		throw new UnimplementedMethodException("nearestNeighbor");
+        logger.log("applies nearest neighbor.");
+
+        setForEachOutputParameters();
+        double xScale = (double) (inWidth - 1) / (outWidth - 1);
+        double yScale = (double) (inHeight - 1) / (outHeight - 1);
+
+		BufferedImage ans = newEmptyOutputSizedImage();
+
+		forEach((y, x) -> {
+		    int oldX = (int) Math.round(xScale * x);
+		    int oldY = (int) Math.round(yScale * y);
+			ans.setRGB(x, y, workingImage.getRGB(oldX, oldY));
+		});
+
+        logger.log("nearest neighbor done.");
+        return ans;
 	}
 	
 	public BufferedImage bilinear() {
-	    setForEachInputParameters();
+	    setForEachOutputParameters();
 		//TODO: Implement this method, remove the exception.
 		logger.log("applies bilinear interpolation.");
 
@@ -166,24 +179,36 @@ public class ImageProcessor extends FunctioalForEachLoops {
 
 		BufferedImage ans = newEmptyOutputSizedImage();
 
+
 		double xScale = (double) (inWidth - 1) / (outWidth - 1);
 		double yScale = (double) (inHeight - 1) / (outHeight - 1);
 
-		for (int y = 0; y < outHeight; y++) {
-			for (int x = 0; x < outWidth; x++) {
-				//converting to original image relative position
-				double xFit = xScale * x;
-				double yFit = yScale * y;
-				int xLeft = (int) Math.floor(xFit);
-				int xRight = (int) Math.ceil(xFit);
-				int yUp = (int) Math.ceil(yFit);
-				int yDown = (int) Math.floor(yFit);
+        forEach((y, x) -> {
+            int xLeft = 0;
+            int xRight = 0;
+            int yUp = 0;
+            int yDown = 0;
+            //converting to original image relative position
+            double xFit = xScale * x;
+            double yFit = yScale * y;
+            if (xFit != inWidth - 1) {
+                xLeft = (int) Math.floor(xFit);
+                xRight = (int) Math.floor(xFit + 1);
+            } else {
+                xLeft = (int) xFit - 1;
+                xRight = (int) xFit;
+            }
+            if (yFit != inHeight - 1) {
+                yUp = (int) Math.floor(yFit);
+                yDown = (int) Math.floor(yFit + 1);
+            } else {
+                yUp = (int) yFit - 1;
+                yDown = (int) yFit;
+            }
 
-				Color bilinearC = getLinear(xFit, yFit, xLeft, xRight, yUp, yDown);
-				ans.setRGB(x, y, bilinearC.getRGB());
-			}
-
-		}
+            Color bilinearC = getLinear(xFit, yFit, xLeft, xRight, yUp, yDown);
+            ans.setRGB(x, y, bilinearC.getRGB());
+        });
 
 
 		logger.log("Bi done!");
@@ -197,22 +222,26 @@ public class ImageProcessor extends FunctioalForEachLoops {
 		double yWeight1 = (yUp - y) / (yUp - yDown);
 		double yWeight2 = (y - yDown) / (yUp - yDown);
 
-		Color Q11 = new Color(workingImage.getRGB(xLeft, yDown));
-		Color Q21 = new Color(workingImage.getRGB(xRight, yDown));
-		Color Q12 = new Color(workingImage.getRGB(xLeft, yUp));
-		Color Q22 = new Color(workingImage.getRGB(xRight, yUp));
+		Color leftDown = new Color(workingImage.getRGB(xLeft, yDown));
+		Color rightDown = new Color(workingImage.getRGB(xRight, yDown));
+		Color leftUp = new Color(workingImage.getRGB(xLeft, yUp));
+		Color rightUp = new Color(workingImage.getRGB(xRight, yUp));
 
-		double rx1 = xWeight1 * Q11.getRed() + xWeight2 * Q21.getRed();
-		double gx1 = xWeight1 * Q11.getGreen() + xWeight2 * Q21.getGreen();
-		double bx1 = xWeight1 * Q11.getBlue() + xWeight2 * Q21.getBlue();
 
-		double rx2 = xWeight1 * Q12.getRed() + xWeight2 * Q22.getRed();
-		double gx2 = xWeight1 * Q12.getGreen() + xWeight2 * Q22.getGreen();
-		double bx2 = xWeight1 * Q12.getBlue() + xWeight2 * Q22.getBlue();
+		double xYDownR = xWeight1 * leftDown.getRed() + xWeight2 * rightDown.getRed();
+		double xYDownG = xWeight1 * leftDown.getGreen() + xWeight2 * rightDown.getGreen();
+		double xYDownB = xWeight1 * leftDown.getBlue() + xWeight2 * rightDown.getBlue();
 
-		int r = (int) (yWeight1 * rx1 + yWeight2 * rx2);
-		int g = (int) (yWeight1 * gx1 + yWeight2 * gx2);
-		int b = (int) (yWeight1 * bx1 + yWeight2 * bx2);
+
+		double xYUpR = xWeight1 * leftUp.getRed() + xWeight2 * rightUp.getRed();
+		double xYUpG = xWeight1 * leftUp.getGreen() + xWeight2 * rightUp.getGreen();
+		double xYUpB = xWeight1 * leftUp.getBlue() + xWeight2 * rightUp.getBlue();
+
+		int r = (int) (yWeight1 * xYDownR + yWeight2 * xYUpR);
+		int g = (int) (yWeight1 * xYDownG + yWeight2 * xYUpG);
+		int b = (int) (yWeight1 * xYDownB + yWeight2 * xYUpB);
+
+
 
 		return new Color(r, g, b);
 	}
