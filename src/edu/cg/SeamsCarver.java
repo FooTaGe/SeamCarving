@@ -248,9 +248,11 @@ public class SeamsCarver extends ImageProcessor {
         }
         else if(x == 0){
 		    cr = Math.abs(tempImage.get(x, y - 1).value - tempImage.get(x + 1, y).value);
+		    cv += 250;
         }
         else if (x == width - 1){
 		    cl = Math.abs(tempImage.get(x, y - 1).value - tempImage.get(x - 1, y).value);
+            cv += 250;
         }
         leftParent += cl;
         rightParent += cr;
